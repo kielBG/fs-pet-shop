@@ -1,6 +1,4 @@
-import http from 'http';
 import fs from 'fs';
-import url from 'url';
 const port = process.env.PORT || 8000;
 import express from 'express'
 const app = express();
