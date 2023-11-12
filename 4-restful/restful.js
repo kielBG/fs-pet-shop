@@ -1,122 +1,100 @@
-import fs from 'fs/promises';
-const port = process.env.PORT || 8000;
-import express from 'express'
+import express from "express"
+import pg from "pg"
+import dotenv from "dotenv"
+
+const port = process.env.port || 3000;
 const app = express();
 
-app.use(express.json());
 
-const PET_JSON_URL = "../pets.json"
 
-//Check Input
-function checkInput(req, res, next){
-  const {age, kind, name} = req.body
-  if (parseInt(age) && kind && name){
-    req.pet = {age: parseInt(age), kind, name}
-    next()
-  }else{
-    res.status(400).json({error:"Invald Input"})
+dotenv.config({path: '../.env'})
+
+//Pool for the local host
+const pool = new pg.Pool({
+  user: 'postgres',
+  host: 'localhost',
+  database: 'petshop',
+  password: process.env.PG_PASS,
+  port: 5432
+})
+
+app.use(express.static('public'))
+app.use(express.json())
+//GET ALL 
+app.get('/pets', async (req,res)=>{
+  const client = await pool.connect();
+  try{
+    const result = await client.query('SELECT * FROM pets',[])
+    res.json(result.rows)
   }
-}
-
-app.use((req, res, next) => {
-    const url = req.url;
-    if(!url.includes('/pets')) {
-        next({message: 'Not found', status: 404})
-    } else {
-        next()
-    }
+  catch (err) {
+    res.status(500).send(err)
+  }
+  finally{
+    client.release();
+  }
+  
+})
+//GET ONE
+app.get('/pets/:id', async (req,res)=>{
+  const client = await pool.connect();
+  try{
+    const result = await client.query('SELECT * FROM pets WHERE id = $1;',[req.params.id])
+    res.json(result.rows)
+  }
+  catch (err) {
+    res.status(500).send(err)
+  }
+  finally{
+    client.release();
+  }
+})
+//CREATE ONE
+app.post('/pets', async (req,res)=>{
+  const client = await pool.connect();
+  const {age,kind,name} = req.body
+  try{
+    const result = await client.query('INSERT INTO pets (age,kind,name) VALUES ($1,$2,$3)',[age,kind,name])
+    res.json(req.body)
+  }
+  catch (err) {
+    res.status(500).send(err)
+  }
+  finally{
+    client.release();
+  }
+})
+//UPDATE ONE
+app.put('/pets/:id', async (req,res)=>{
+  const client = await pool.connect();
+  const {age,kind,name} = req.body
+  try{
+    const result = await client.query('UPDATE pets SET age = $1, kind = $2, name = $3 WHERE id = $4',[age,kind,name,req.params.id])
+    res.json(req.body)
+  }
+  catch (err) {
+    res.status(500).send(err)
+  }
+  finally{
+    client.release();
+  }
+  
+})
+//DELETE
+app.delete('/pets/:id', async (req,res)=>{
+  const client = await pool.connect();
+  try{
+    const result = await client.query('DELETE FROM pets WHERE id = $1;',[req.params.id])
+    res.json(result.rows)
+  }
+  catch (err) {
+    res.status(500).send(err)
+  }
+  finally{
+    client.release();
+  }
 })
 
-//GET ALL
-app.get('/pets', (req,res,next)=>{
-  fs.readFile(PET_JSON_URL, "utf8")
-    .then(data=>{
-      const pets = JSON.parse(data);
-      res.status(200).json(pets)
-    })
-    .catch(err=>{
-      next(err)
-    }) 
-})
-//ADD 1
-app.post('/pets',checkInput, (req,res,next)=>{
-  fs.readFile(PET_JSON_URL, "utf8")
-    .then(data=>{
-      const pets = JSON.parse(data)
-      pets.push(req.pet)
-      return fs.writeFile(PET_JSON_URL, JSON.stringify(pets))
-    })
-    .then(()=>{
-      res.status(201).json(req.pet)
-    })
-    .catch(err=>{
-      next(err)
-    })
-})
-//GET 1
-app.get('/pets/:id', (req,res,next)=>{
-  const index = req.params.id
-  fs.readFile(PET_JSON_URL, "utf8")
-    .then(data=>{
-      const pets = JSON.parse(data)
-      pets[parseInt(index)]? res.status(200).send(pets[parseInt(index)]) : res.status(400).json({error:"Invald Input"})
-    })
-    .catch(err=>{
-      next(err)
-    })
-})
-//UPDATE 1
-app.put('/pets/:id',checkInput, (req,res,next)=>{
-  const index = req.params.id
-  fs.readFile(PET_JSON_URL, "utf8")
-    .then(data=>{
-      const pets = JSON.parse(data)
-      if(pets[parseInt(index)]){
-        pets[parseInt(index)] = req.pet
-        return fs.writeFile(PET_JSON_URL, JSON.stringify(pets))
-      }
-      else{
-        res.status(400).json({error:"Invald Input"})
-      }
-    })
-    .then(()=>{
-      res.status(201).json(req.pet)
-    })
-    .catch(err=>{
-      next(err)
-    })
-})
-//DELETE 1
-app.delete('/pets/:id', (req,res,next)=>{
-  const index = req.params.id
-  fs.readFile(PET_JSON_URL, "utf8")
-    .then(data=>{
-      const pets = JSON.parse(data)
-      if(pets[parseInt(index)]){
-        req.pet = pets[parseInt(index)]
-        delete pets[parseInt(index)] 
-        return fs.writeFile(PET_JSON_URL, JSON.stringify(pets))
-      }
-      else{
-        res.status(400).json({error:"Invald Input"})
-      }
-    })
-    .then(()=>{
-      res.status(204).json(req.pet)
-    })
-    .catch(err=>{
-      next(err)
-    })
-})
-//CATCH ALL
-app.use((req, res)=>{
-  res.status(404).json({error: "Page Not Found"})
-})
-//INTERAL ERROR
-app.use((err, req, res)=>{
-  res.status(500).json({error: "Internal Error"})
-})
-//PORT
 app.listen(port, ()=>{
-  console.log("Server Running on Port:", port)
+  console.log("Server Running on port:", port)
 })
